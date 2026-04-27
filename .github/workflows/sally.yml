@@ -1,0 +1,146 @@
+name: Sally Daily Run
+
+on:
+  schedule:
+    - cron: '30 13 * * *'   # 9:30 AM ET (13:30 UTC)
+    - cron: '0 21 * * *'    # 5:00 PM ET (21:00 UTC)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode'
+        required: true
+        default: 'daily'
+        type: choice
+        options:
+          - daily
+          - brand-api-smoke
+          - duplicate-review
+          - buyer-branding-backfill
+          - rss-discovery
+      buyer_branding_limit:
+        description: 'Max deals to inspect for buyer branding backfill / duplicate review'
+        required: false
+        default: '250'
+      buyer_branding_force:
+        description: 'Force refresh cached buyer domains'
+        required: false
+        default: true
+        type: boolean
+      buyer_branding_missing_only:
+        description: 'Only inspect deals with missing buyer_domain'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    defaults:
+      run:
+        working-directory: sally-news-analyst
+
+    steps:
+      - name: Checkout private Sally repo
+        uses: actions/checkout@v4
+        with:
+          repository: colesterrett/sally-news-analyst
+          token: ${{ secrets.SALLY_REPO_PAT }}
+          path: sally-news-analyst
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: sally-news-analyst/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run Sally
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode == 'daily' }}
+        run: npm start
+        env:
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+          LOGO_DEV_SECRET_KEY: ${{ secrets.LOGO_DEV_SECRET_KEY }}
+          BRANDFETCH_CLIENT_ID: ${{ secrets.BRANDFETCH_CLIENT_ID }}
+          BRANDFETCH_API_KEY: ${{ secrets.BRANDFETCH_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
+          EDITOR_MODEL: ${{ vars.EDITOR_MODEL }}
+
+      - name: Smoke test brand APIs
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'brand-api-smoke' }}
+        run: npm run smoke-brand-apis
+        env:
+          LOGO_DEV_SECRET_KEY: ${{ secrets.LOGO_DEV_SECRET_KEY }}
+          BRANDFETCH_CLIENT_ID: ${{ secrets.BRANDFETCH_CLIENT_ID }}
+          BRANDFETCH_API_KEY: ${{ secrets.BRANDFETCH_API_KEY }}
+
+      - name: Backfill buyer branding
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'buyer-branding-backfill' }}
+        run: |
+          ARGS="--limit=${{ inputs.buyer_branding_limit }}"
+          if [ "${{ inputs.buyer_branding_force }}" = "true" ]; then
+            ARGS="$ARGS --force"
+          fi
+          if [ "${{ inputs.buyer_branding_missing_only }}" = "true" ]; then
+            ARGS="$ARGS --missing"
+          fi
+          npm run backfill-buyer-branding -- $ARGS
+        env:
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+          LOGO_DEV_SECRET_KEY: ${{ secrets.LOGO_DEV_SECRET_KEY }}
+          BRANDFETCH_CLIENT_ID: ${{ secrets.BRANDFETCH_CLIENT_ID }}
+          BRANDFETCH_API_KEY: ${{ secrets.BRANDFETCH_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
+
+      - name: Review recent duplicates
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'duplicate-review' }}
+        run: npm run review-recent-duplicates -- --limit=${{ inputs.buyer_branding_limit }}
+        env:
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
+
+      - name: Discover RSS feeds
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'rss-discovery' }}
+        run: npm run discover-rss
+        env:
+          FORCE_RSS_REFRESH: "true"
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sally-run-${{ github.run_id }}
+          path: sally-news-analyst/runs/
+          retention-days: 14
+
+      - name: Revalidate Buyout Desk cache
+        if: success()
+        run: |
+          curl -s -X POST "https://buyout-desk.vercel.app/api/revalidate?secret=${{ secrets.REVALIDATE_SECRET }}" || true
+
+      - name: Notify Slack on failure
+        if: failure()
+        run: |
+          curl -s -X POST -H 'Content-Type: application/json' \
+            -d '{"text":"Sally Daily Run failed. Check: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"}' \
+            "${{ secrets.SLACK_WEBHOOK_URL }}" || true
