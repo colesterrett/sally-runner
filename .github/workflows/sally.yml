@@ -2,7 +2,6 @@ name: Sally Daily Run
 
 on:
   schedule:
-    - cron: '10 16 * * *'   # TEMP test: 9:10 AM PT / 12:10 PM ET during daylight time
     - cron: '37 13 * * *'   # Primary morning run: 9:37 AM ET during daylight time
     - cron: '7 14 * * *'    # Morning backup if GitHub drops/delays the primary
     - cron: '37 14 * * *'   # Final morning backup
