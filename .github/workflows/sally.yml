@@ -136,20 +136,22 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
           EDITOR_MODEL: ${{ vars.EDITOR_MODEL }}
-          OLLAMA_MAX_RETRIES: "2"
+          OLLAMA_TIMEOUT_MS: "75000"
+          OLLAMA_MAX_RETRIES: "1"
+          AGENT_SCANNER_TIMEOUT_MS: "240000"
           CRITICAL_LOOKBACK_DAYS: "2"
           CRITICAL_BATCH_SIZE: "40"
-          CRITICAL_MAX_HEADLINES: "120"
+          CRITICAL_MAX_HEADLINES: "80"
           MONITORED_LLM_CONCURRENCY: "1"
           MONITORED_BATCH_SIZE: "12"
-          MONITORED_MAX_NEW_CANDIDATES: "240"
-          MONITORED_MAX_LLM_ARTICLES: "120"
-          MAX_LOW_FIDELITY_ENRICHMENTS: "40"
-          DUPLICATE_REVIEW_MAX_GROUPS: "12"
+          MONITORED_MAX_NEW_CANDIDATES: "160"
+          MONITORED_MAX_LLM_ARTICLES: "84"
+          MAX_LOW_FIDELITY_ENRICHMENTS: "25"
+          DUPLICATE_REVIEW_MAX_GROUPS: "8"
           BUYER_BRANDING_CONCURRENCY: "1"
-          BUYER_BRANDING_MAX_RESOLUTIONS: "40"
+          BUYER_BRANDING_MAX_RESOLUTIONS: "30"
           DISPLAY_COPY_CONCURRENCY: "1"
-          DISPLAY_COPY_MAX_LLM_DEALS: "30"
+          DISPLAY_COPY_MAX_LLM_DEALS: "20"
 
       - name: Smoke test brand APIs
         if: ${{ steps.schedule_guard.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'brand-api-smoke' }}
