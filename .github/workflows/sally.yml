@@ -19,6 +19,7 @@ on:
           - brand-api-smoke
           - duplicate-review
           - qa-recent-deals
+          - editorial-summary-backfill
           - buyer-branding-backfill
           - rss-discovery
       buyer_branding_limit:
@@ -214,6 +215,22 @@ jobs:
           OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
           REVIEW_MODEL: ${{ vars.REVIEW_MODEL || vars.OLLAMA_MODEL || 'deepseek-v4-pro:cloud' }}
 
+      - name: Backfill editorial summaries
+        if: ${{ steps.schedule_guard.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'editorial-summary-backfill' }}
+        working-directory: sally-news-analyst
+        run: npm run backfill-editorial-summaries -- --limit=${{ inputs.buyer_branding_limit }}
+        env:
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
+          FAST_MODEL: ${{ vars.FAST_MODEL || 'deepseek-v4-flash:cloud' }}
+          COPY_MODEL: ${{ vars.COPY_MODEL || vars.FAST_MODEL || 'deepseek-v4-flash:cloud' }}
+          OLLAMA_TIMEOUT_MS: "75000"
+          OLLAMA_MAX_RETRIES: "1"
+          DISPLAY_COPY_CONCURRENCY: "1"
+          DISPLAY_COPY_MAX_LLM_DEALS: "40"
+
       - name: Discover RSS feeds
         if: ${{ steps.schedule_guard.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'rss-discovery' }}
         working-directory: sally-news-analyst
@@ -253,7 +270,7 @@ jobs:
           NODE
 
       - name: Revalidate Buyout Desk cache
-        if: ${{ success() && steps.schedule_guard.outputs.should_run == 'true' && (steps.publish_decision.outputs.should_revalidate == 'true' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'qa-recent-deals')) }}
+        if: ${{ success() && steps.schedule_guard.outputs.should_run == 'true' && (steps.publish_decision.outputs.should_revalidate == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'qa-recent-deals' || inputs.mode == 'editorial-summary-backfill'))) }}
         run: |
           curl -s -X POST "https://buyout-desk.vercel.app/api/revalidate?secret=${{ secrets.REVALIDATE_SECRET }}" || true
 
