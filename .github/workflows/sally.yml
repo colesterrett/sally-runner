@@ -135,6 +135,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
+          SCANNER_MODEL: "gemma4:31b"
           EDITOR_MODEL: ${{ vars.EDITOR_MODEL }}
           OLLAMA_TIMEOUT_MS: "75000"
           OLLAMA_MAX_RETRIES: "1"
