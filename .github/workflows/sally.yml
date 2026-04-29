@@ -18,6 +18,7 @@ on:
           - daily
           - brand-api-smoke
           - duplicate-review
+          - qa-recent-deals
           - buyer-branding-backfill
           - rss-discovery
       buyer_branding_limit:
@@ -202,6 +203,17 @@ jobs:
           OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
           REVIEW_MODEL: ${{ vars.REVIEW_MODEL || vars.OLLAMA_MODEL || 'deepseek-v4-pro:cloud' }}
 
+      - name: QA recent deals
+        if: ${{ steps.schedule_guard.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'qa-recent-deals' }}
+        working-directory: sally-news-analyst
+        run: npm run qa-recent-deals -- --limit=${{ inputs.buyer_branding_limit }}
+        env:
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
+          REVIEW_MODEL: ${{ vars.REVIEW_MODEL || vars.OLLAMA_MODEL || 'deepseek-v4-pro:cloud' }}
+
       - name: Discover RSS feeds
         if: ${{ steps.schedule_guard.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'rss-discovery' }}
         working-directory: sally-news-analyst
@@ -241,7 +253,7 @@ jobs:
           NODE
 
       - name: Revalidate Buyout Desk cache
-        if: ${{ success() && steps.schedule_guard.outputs.should_run == 'true' && steps.publish_decision.outputs.should_revalidate == 'true' }}
+        if: ${{ success() && steps.schedule_guard.outputs.should_run == 'true' && (steps.publish_decision.outputs.should_revalidate == 'true' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'qa-recent-deals')) }}
         run: |
           curl -s -X POST "https://buyout-desk.vercel.app/api/revalidate?secret=${{ secrets.REVALIDATE_SECRET }}" || true
 
