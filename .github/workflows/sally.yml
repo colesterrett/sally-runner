@@ -135,7 +135,10 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
-          SCANNER_MODEL: "gemma4:31b"
+          FAST_MODEL: ${{ vars.FAST_MODEL || 'deepseek-v4-flash:cloud' }}
+          SCANNER_MODEL: ${{ vars.SCANNER_MODEL || 'deepseek-v4-flash:cloud' }}
+          REVIEW_MODEL: ${{ vars.REVIEW_MODEL || vars.OLLAMA_MODEL || 'deepseek-v4-pro:cloud' }}
+          COPY_MODEL: ${{ vars.COPY_MODEL || vars.FAST_MODEL || 'deepseek-v4-flash:cloud' }}
           EDITOR_MODEL: ${{ vars.EDITOR_MODEL }}
           OLLAMA_TIMEOUT_MS: "75000"
           OLLAMA_MAX_RETRIES: "1"
@@ -184,6 +187,9 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
+          FAST_MODEL: ${{ vars.FAST_MODEL || 'deepseek-v4-flash:cloud' }}
+          REVIEW_MODEL: ${{ vars.REVIEW_MODEL || vars.OLLAMA_MODEL || 'deepseek-v4-pro:cloud' }}
+          COPY_MODEL: ${{ vars.COPY_MODEL || vars.FAST_MODEL || 'deepseek-v4-flash:cloud' }}
 
       - name: Review recent duplicates
         if: ${{ steps.schedule_guard.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'duplicate-review' }}
@@ -194,6 +200,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
+          REVIEW_MODEL: ${{ vars.REVIEW_MODEL || vars.OLLAMA_MODEL || 'deepseek-v4-pro:cloud' }}
 
       - name: Discover RSS feeds
         if: ${{ steps.schedule_guard.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'rss-discovery' }}
@@ -212,8 +219,29 @@ jobs:
           path: sally-news-analyst/runs/
           retention-days: 14
 
+      - name: Read Sally publish decision
+        id: publish_decision
+        if: ${{ always() && steps.schedule_guard.outputs.should_run == 'true' && (github.event_name != 'workflow_dispatch' || inputs.mode == 'daily') }}
+        working-directory: sally-news-analyst
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const today = new Date().toISOString().slice(0, 10);
+          const file = path.join('runs', today, 'publish_decision.json');
+          let shouldPublish = false;
+          let reason = 'publish_decision.json was not written';
+          if (fs.existsSync(file)) {
+            const decision = JSON.parse(fs.readFileSync(file, 'utf8'));
+            shouldPublish = decision.should_publish === true;
+            reason = decision.reason || reason;
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `should_revalidate=${shouldPublish}\n`);
+          console.log(`Sally publish decision: ${shouldPublish ? 'publish' : 'hold'} - ${reason}`);
+          NODE
+
       - name: Revalidate Buyout Desk cache
-        if: ${{ success() && steps.schedule_guard.outputs.should_run == 'true' }}
+        if: ${{ success() && steps.schedule_guard.outputs.should_run == 'true' && steps.publish_decision.outputs.should_revalidate == 'true' }}
         run: |
           curl -s -X POST "https://buyout-desk.vercel.app/api/revalidate?secret=${{ secrets.REVALIDATE_SECRET }}" || true
 
