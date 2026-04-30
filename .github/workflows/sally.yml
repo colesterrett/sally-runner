@@ -2,7 +2,6 @@ name: Sally Daily Run
 
 on:
   schedule:
-    - cron: '30 13-23 * * *' # hourly, 9:30 AM-7:30 PM ET — daily scan; publishes only after 3+ net-new deals
     - cron: '15 23 * * *'   # 7:15 PM ET — duplicate-review (after both daily runs settle)
     - cron: '30 1 * * *'    # 9:30 PM ET — buyer-branding-backfill --missing
     - cron: '0 2 * * *'     # 10:00 PM ET — process-deal-flags (reader-submitted flags)
@@ -69,9 +68,6 @@ jobs:
             exit 0
           fi
           case "${{ github.event.schedule }}" in
-            "30 13-23 * * *")
-              echo "mode=daily" >> "$GITHUB_OUTPUT"
-              ;;
             "15 23 * * *")
               echo "mode=duplicate-review" >> "$GITHUB_OUTPUT"
               echo "buyer_branding_limit=250" >> "$GITHUB_OUTPUT"
