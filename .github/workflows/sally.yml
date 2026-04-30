@@ -23,6 +23,7 @@ on:
           - rss-discovery
           - deal-brief-backfill
           - process-deal-flags
+          - sector-tag-backfill
       buyer_branding_limit:
         description: 'Max deals to inspect for buyer branding backfill / duplicate review'
         required: false
@@ -37,6 +38,10 @@ on:
         required: false
         default: false
         type: boolean
+      sector_tag_limit:
+        description: 'Max deals to tag for normalized sector backfill'
+        required: false
+        default: '600'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -49,6 +54,7 @@ jobs:
       buyer_branding_limit: ${{ steps.pick.outputs.buyer_branding_limit }}
       buyer_branding_force: ${{ steps.pick.outputs.buyer_branding_force }}
       buyer_branding_missing_only: ${{ steps.pick.outputs.buyer_branding_missing_only }}
+      sector_tag_limit: ${{ steps.pick.outputs.sector_tag_limit }}
     steps:
       - id: pick
         name: Pick run mode based on cron schedule or manual dispatch
@@ -59,6 +65,7 @@ jobs:
             echo "buyer_branding_limit=${{ inputs.buyer_branding_limit }}" >> "$GITHUB_OUTPUT"
             echo "buyer_branding_force=${{ inputs.buyer_branding_force }}" >> "$GITHUB_OUTPUT"
             echo "buyer_branding_missing_only=${{ inputs.buyer_branding_missing_only }}" >> "$GITHUB_OUTPUT"
+            echo "sector_tag_limit=${{ inputs.sector_tag_limit }}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           case "${{ github.event.schedule }}" in
@@ -196,6 +203,13 @@ jobs:
       - name: Process reader-submitted deal flags
         if: ${{ needs.resolve_mode.outputs.mode == 'process-deal-flags' }}
         run: npm run process-deal-flags
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Backfill normalized sector tags
+        if: ${{ needs.resolve_mode.outputs.mode == 'sector-tag-backfill' }}
+        run: npm run backfill-sector-tags -- --limit=${{ needs.resolve_mode.outputs.sector_tag_limit }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
