@@ -2,11 +2,12 @@ name: Sally Daily Run
 
 on:
   schedule:
-    - cron: '37 13 * * *'   # Primary morning run: 9:37 AM ET during daylight time
-    - cron: '7 14 * * *'    # Morning backup if GitHub drops/delays the primary
-    - cron: '37 14 * * *'   # Final morning backup
-    - cron: '7 21 * * *'    # Primary evening run: 5:07 PM ET during daylight time
-    - cron: '37 21 * * *'   # Evening backup
+    - cron: '30 13 * * *'   # 9:30 AM ET — daily run (primary)
+    - cron: '0 21 * * *'    # 5:00 PM ET — daily run (afternoon)
+    - cron: '15 23 * * *'   # 7:15 PM ET — duplicate-review (after both daily runs settle)
+    - cron: '30 1 * * *'    # 9:30 PM ET — buyer-branding-backfill --missing
+    - cron: '30 6 * * 3'    # 2:30 AM ET Wednesday — brand-api-smoke (weekly health check)
+    - cron: '30 9 * * 0'    # 5:30 AM ET Sunday — rss-discovery (weekly)
   workflow_dispatch:
     inputs:
       mode:
@@ -18,8 +19,6 @@ on:
           - daily
           - brand-api-smoke
           - duplicate-review
-          - qa-recent-deals
-          - editorial-summary-backfill
           - buyer-branding-backfill
           - rss-discovery
       buyer_branding_limit:
@@ -40,66 +39,67 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-permissions:
-  actions: read
-  contents: read
-
-concurrency:
-  group: sally-daily-run
-  cancel-in-progress: false
-
 jobs:
-  run:
+  resolve_mode:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
-
+    outputs:
+      mode: ${{ steps.pick.outputs.mode }}
+      buyer_branding_limit: ${{ steps.pick.outputs.buyer_branding_limit }}
+      buyer_branding_force: ${{ steps.pick.outputs.buyer_branding_force }}
+      buyer_branding_missing_only: ${{ steps.pick.outputs.buyer_branding_missing_only }}
     steps:
-      - name: Decide whether scheduled backup should run
-        id: schedule_guard
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT_NAME: ${{ github.event_name }}
-          REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-          SCHEDULE: ${{ github.event.schedule }}
+      - id: pick
+        name: Pick run mode based on cron schedule or manual dispatch
         run: |
-          set -euo pipefail
-          echo "should_run=true" >> "$GITHUB_OUTPUT"
-
-          if [ "$EVENT_NAME" != "schedule" ]; then
+          set -e
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=${{ inputs.mode }}" >> "$GITHUB_OUTPUT"
+            echo "buyer_branding_limit=${{ inputs.buyer_branding_limit }}" >> "$GITHUB_OUTPUT"
+            echo "buyer_branding_force=${{ inputs.buyer_branding_force }}" >> "$GITHUB_OUTPUT"
+            echo "buyer_branding_missing_only=${{ inputs.buyer_branding_missing_only }}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
-          case "$SCHEDULE" in
-            "7 14 * * *"|"37 14 * * *")
-              window_hours=3
+          case "${{ github.event.schedule }}" in
+            "30 13 * * *"|"0 21 * * *")
+              echo "mode=daily" >> "$GITHUB_OUTPUT"
               ;;
-            "37 21 * * *")
-              window_hours=2
+            "15 23 * * *")
+              echo "mode=duplicate-review" >> "$GITHUB_OUTPUT"
+              echo "buyer_branding_limit=250" >> "$GITHUB_OUTPUT"
+              ;;
+            "30 1 * * *")
+              echo "mode=buyer-branding-backfill" >> "$GITHUB_OUTPUT"
+              echo "buyer_branding_limit=250" >> "$GITHUB_OUTPUT"
+              echo "buyer_branding_force=false" >> "$GITHUB_OUTPUT"
+              echo "buyer_branding_missing_only=true" >> "$GITHUB_OUTPUT"
+              ;;
+            "30 6 * * 3")
+              echo "mode=brand-api-smoke" >> "$GITHUB_OUTPUT"
+              ;;
+            "30 9 * * 0")
+              echo "mode=rss-discovery" >> "$GITHUB_OUTPUT"
               ;;
             *)
-              exit 0
+              echo "Unknown schedule: ${{ github.event.schedule }}; defaulting to daily" >&2
+              echo "mode=daily" >> "$GITHUB_OUTPUT"
               ;;
           esac
 
-          cutoff="$(date -u -d "$window_hours hours ago" +"%Y-%m-%dT%H:%M:%SZ")"
-          recent_success_count="$(
-            gh run list \
-              --repo "$REPO" \
-              --workflow "sally.yml" \
-              --status success \
-              --limit 20 \
-              --json databaseId,createdAt \
-              --jq "[.[] | select(.databaseId != ($RUN_ID | tonumber) and .createdAt > \"$cutoff\")] | length"
-          )"
+  run:
+    needs: resolve_mode
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
 
-          if [ "$recent_success_count" -gt 0 ]; then
-            echo "A successful Sally run already completed within the backup window; skipping this backup schedule."
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
-          fi
+    defaults:
+      run:
+        working-directory: sally-news-analyst
+
+    steps:
+      - name: Echo selected mode
+        run: echo "Running mode=${{ needs.resolve_mode.outputs.mode }}"
+        working-directory: .
 
       - name: Checkout private Sally repo
-        if: steps.schedule_guard.outputs.should_run == 'true'
         uses: actions/checkout@v4
         with:
           repository: colesterrett/sally-news-analyst
@@ -107,25 +107,19 @@ jobs:
           path: sally-news-analyst
 
       - uses: actions/setup-node@v4
-        if: steps.schedule_guard.outputs.should_run == 'true'
         with:
           node-version: '24'
           cache: 'npm'
           cache-dependency-path: sally-news-analyst/package-lock.json
 
       - name: Install dependencies
-        if: steps.schedule_guard.outputs.should_run == 'true'
-        working-directory: sally-news-analyst
         run: npm ci
 
       - name: Build
-        if: steps.schedule_guard.outputs.should_run == 'true'
-        working-directory: sally-news-analyst
         run: npm run build
 
-      - name: Run Sally
-        if: ${{ steps.schedule_guard.outputs.should_run == 'true' && (github.event_name != 'workflow_dispatch' || inputs.mode == 'daily') }}
-        working-directory: sally-news-analyst
+      - name: Run Sally (daily)
+        if: ${{ needs.resolve_mode.outputs.mode == 'daily' }}
         run: npm start
         env:
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
@@ -137,31 +131,10 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
-          FAST_MODEL: ${{ vars.FAST_MODEL || 'deepseek-v4-flash:cloud' }}
-          SCANNER_MODEL: ${{ vars.SCANNER_MODEL || 'deepseek-v4-flash:cloud' }}
-          REVIEW_MODEL: ${{ vars.REVIEW_MODEL || vars.OLLAMA_MODEL || 'deepseek-v4-pro:cloud' }}
-          COPY_MODEL: ${{ vars.COPY_MODEL || vars.FAST_MODEL || 'deepseek-v4-flash:cloud' }}
           EDITOR_MODEL: ${{ vars.EDITOR_MODEL }}
-          OLLAMA_TIMEOUT_MS: "75000"
-          OLLAMA_MAX_RETRIES: "1"
-          AGENT_SCANNER_TIMEOUT_MS: "240000"
-          CRITICAL_LOOKBACK_DAYS: "2"
-          CRITICAL_BATCH_SIZE: "40"
-          CRITICAL_MAX_HEADLINES: "80"
-          MONITORED_LLM_CONCURRENCY: "1"
-          MONITORED_BATCH_SIZE: "12"
-          MONITORED_MAX_NEW_CANDIDATES: "160"
-          MONITORED_MAX_LLM_ARTICLES: "84"
-          MAX_LOW_FIDELITY_ENRICHMENTS: "25"
-          DUPLICATE_REVIEW_MAX_GROUPS: "8"
-          BUYER_BRANDING_CONCURRENCY: "1"
-          BUYER_BRANDING_MAX_RESOLUTIONS: "30"
-          DISPLAY_COPY_CONCURRENCY: "1"
-          DISPLAY_COPY_MAX_LLM_DEALS: "20"
 
       - name: Smoke test brand APIs
-        if: ${{ steps.schedule_guard.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'brand-api-smoke' }}
-        working-directory: sally-news-analyst
+        if: ${{ needs.resolve_mode.outputs.mode == 'brand-api-smoke' }}
         run: npm run smoke-brand-apis
         env:
           LOGO_DEV_SECRET_KEY: ${{ secrets.LOGO_DEV_SECRET_KEY }}
@@ -169,14 +142,13 @@ jobs:
           BRANDFETCH_API_KEY: ${{ secrets.BRANDFETCH_API_KEY }}
 
       - name: Backfill buyer branding
-        if: ${{ steps.schedule_guard.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'buyer-branding-backfill' }}
-        working-directory: sally-news-analyst
+        if: ${{ needs.resolve_mode.outputs.mode == 'buyer-branding-backfill' }}
         run: |
-          ARGS="--limit=${{ inputs.buyer_branding_limit }}"
-          if [ "${{ inputs.buyer_branding_force }}" = "true" ]; then
+          ARGS="--limit=${{ needs.resolve_mode.outputs.buyer_branding_limit }}"
+          if [ "${{ needs.resolve_mode.outputs.buyer_branding_force }}" = "true" ]; then
             ARGS="$ARGS --force"
           fi
-          if [ "${{ inputs.buyer_branding_missing_only }}" = "true" ]; then
+          if [ "${{ needs.resolve_mode.outputs.buyer_branding_missing_only }}" = "true" ]; then
             ARGS="$ARGS --missing"
           fi
           npm run backfill-buyer-branding -- $ARGS
@@ -189,51 +161,18 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
-          FAST_MODEL: ${{ vars.FAST_MODEL || 'deepseek-v4-flash:cloud' }}
-          REVIEW_MODEL: ${{ vars.REVIEW_MODEL || vars.OLLAMA_MODEL || 'deepseek-v4-pro:cloud' }}
-          COPY_MODEL: ${{ vars.COPY_MODEL || vars.FAST_MODEL || 'deepseek-v4-flash:cloud' }}
 
       - name: Review recent duplicates
-        if: ${{ steps.schedule_guard.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'duplicate-review' }}
-        working-directory: sally-news-analyst
-        run: npm run review-recent-duplicates -- --limit=${{ inputs.buyer_branding_limit }}
+        if: ${{ needs.resolve_mode.outputs.mode == 'duplicate-review' }}
+        run: npm run review-recent-duplicates -- --limit=${{ needs.resolve_mode.outputs.buyer_branding_limit }}
         env:
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
-          REVIEW_MODEL: ${{ vars.REVIEW_MODEL || vars.OLLAMA_MODEL || 'deepseek-v4-pro:cloud' }}
-
-      - name: QA recent deals
-        if: ${{ steps.schedule_guard.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'qa-recent-deals' }}
-        working-directory: sally-news-analyst
-        run: npm run qa-recent-deals -- --limit=${{ inputs.buyer_branding_limit }}
-        env:
-          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
-          REVIEW_MODEL: ${{ vars.REVIEW_MODEL || vars.OLLAMA_MODEL || 'deepseek-v4-pro:cloud' }}
-
-      - name: Backfill editorial summaries
-        if: ${{ steps.schedule_guard.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'editorial-summary-backfill' }}
-        working-directory: sally-news-analyst
-        run: npm run backfill-editorial-summaries -- --limit=${{ inputs.buyer_branding_limit }}
-        env:
-          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
-          FAST_MODEL: ${{ vars.FAST_MODEL || 'deepseek-v4-flash:cloud' }}
-          COPY_MODEL: ${{ vars.COPY_MODEL || vars.FAST_MODEL || 'deepseek-v4-flash:cloud' }}
-          OLLAMA_TIMEOUT_MS: "75000"
-          OLLAMA_MAX_RETRIES: "1"
-          DISPLAY_COPY_CONCURRENCY: "1"
-          DISPLAY_COPY_MAX_LLM_DEALS: "40"
 
       - name: Discover RSS feeds
-        if: ${{ steps.schedule_guard.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'rss-discovery' }}
-        working-directory: sally-news-analyst
+        if: ${{ needs.resolve_mode.outputs.mode == 'rss-discovery' }}
         run: npm run discover-rss
         env:
           FORCE_RSS_REFRESH: "true"
@@ -241,42 +180,21 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Upload run artifacts
-        if: ${{ always() && steps.schedule_guard.outputs.should_run == 'true' }}
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: sally-run-${{ github.run_id }}
+          name: sally-run-${{ github.run_id }}-${{ needs.resolve_mode.outputs.mode }}
           path: sally-news-analyst/runs/
           retention-days: 14
 
-      - name: Read Sally publish decision
-        id: publish_decision
-        if: ${{ always() && steps.schedule_guard.outputs.should_run == 'true' && (github.event_name != 'workflow_dispatch' || inputs.mode == 'daily') }}
-        working-directory: sally-news-analyst
-        run: |
-          node <<'NODE'
-          const fs = require('fs');
-          const path = require('path');
-          const today = new Date().toISOString().slice(0, 10);
-          const file = path.join('runs', today, 'publish_decision.json');
-          let shouldPublish = false;
-          let reason = 'publish_decision.json was not written';
-          if (fs.existsSync(file)) {
-            const decision = JSON.parse(fs.readFileSync(file, 'utf8'));
-            shouldPublish = decision.should_publish === true;
-            reason = decision.reason || reason;
-          }
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `should_revalidate=${shouldPublish}\n`);
-          console.log(`Sally publish decision: ${shouldPublish ? 'publish' : 'hold'} - ${reason}`);
-          NODE
-
       - name: Revalidate Buyout Desk cache
-        if: ${{ success() && steps.schedule_guard.outputs.should_run == 'true' && (steps.publish_decision.outputs.should_revalidate == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'qa-recent-deals' || inputs.mode == 'editorial-summary-backfill'))) }}
+        if: ${{ success() && needs.resolve_mode.outputs.mode == 'daily' }}
         run: |
           curl -s -X POST "https://buyout-desk.vercel.app/api/revalidate?secret=${{ secrets.REVALIDATE_SECRET }}" || true
 
       - name: Notify Slack on failure
-        if: ${{ failure() && steps.schedule_guard.outputs.should_run == 'true' }}
+        if: failure()
         run: |
           curl -s -X POST -H 'Content-Type: application/json' \
-            -d '{"text":"Sally Daily Run failed. Check: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"}' \
+            -d '{"text":"Sally ${{ needs.resolve_mode.outputs.mode }} run failed. Check: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"}' \
             "${{ secrets.SLACK_WEBHOOK_URL }}" || true
