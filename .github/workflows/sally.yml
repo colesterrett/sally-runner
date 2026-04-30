@@ -6,6 +6,7 @@ on:
     - cron: '0 21 * * *'    # 5:00 PM ET — daily run (afternoon)
     - cron: '15 23 * * *'   # 7:15 PM ET — duplicate-review (after both daily runs settle)
     - cron: '30 1 * * *'    # 9:30 PM ET — buyer-branding-backfill --missing
+    - cron: '0 2 * * *'     # 10:00 PM ET — process-deal-flags (reader-submitted flags)
     - cron: '30 6 * * 3'    # 2:30 AM ET Wednesday — brand-api-smoke (weekly health check)
     - cron: '30 9 * * 0'    # 5:30 AM ET Sunday — rss-discovery (weekly)
   workflow_dispatch:
@@ -21,6 +22,8 @@ on:
           - duplicate-review
           - buyer-branding-backfill
           - rss-discovery
+          - deal-brief-backfill
+          - process-deal-flags
       buyer_branding_limit:
         description: 'Max deals to inspect for buyer branding backfill / duplicate review'
         required: false
@@ -72,6 +75,9 @@ jobs:
               echo "buyer_branding_limit=250" >> "$GITHUB_OUTPUT"
               echo "buyer_branding_force=false" >> "$GITHUB_OUTPUT"
               echo "buyer_branding_missing_only=true" >> "$GITHUB_OUTPUT"
+              ;;
+            "0 2 * * *")
+              echo "mode=process-deal-flags" >> "$GITHUB_OUTPUT"
               ;;
             "30 6 * * 3")
               echo "mode=brand-api-smoke" >> "$GITHUB_OUTPUT"
@@ -176,6 +182,22 @@ jobs:
         run: npm run discover-rss
         env:
           FORCE_RSS_REFRESH: "true"
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Backfill deal briefs
+        if: ${{ needs.resolve_mode.outputs.mode == 'deal-brief-backfill' }}
+        run: npm run backfill-deal-briefs -- --days=30
+        env:
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MAX_DEAL_BRIEFS_PER_RUN: '200'
+
+      - name: Process reader-submitted deal flags
+        if: ${{ needs.resolve_mode.outputs.mode == 'process-deal-flags' }}
+        run: npm run process-deal-flags
+        env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
