@@ -140,6 +140,13 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
           EDITOR_MODEL: ${{ vars.EDITOR_MODEL }}
+          MIN_NEW_DEALS_TO_PUBLISH: ${{ vars.MIN_NEW_DEALS_TO_PUBLISH || '3' }}
+          MIN_PUBLISHED_DAY_DEALS: ${{ vars.MIN_PUBLISHED_DAY_DEALS || '3' }}
+          LEAD_STORY_RESELECT_MODE: ${{ vars.LEAD_STORY_RESELECT_MODE || 'preserve' }}
+          LOW_CONFIDENCE_MAX_LLM_DEALS: ${{ vars.LOW_CONFIDENCE_MAX_LLM_DEALS || '40' }}
+          MONITORED_MAX_NEW_CANDIDATES: ${{ vars.MONITORED_MAX_NEW_CANDIDATES || '300' }}
+          MONITORED_MAX_LLM_ARTICLES: ${{ vars.MONITORED_MAX_LLM_ARTICLES || '100' }}
+          MONITORED_LLM_CONCURRENCY: ${{ vars.MONITORED_LLM_CONCURRENCY || '2' }}
 
       - name: Smoke test brand APIs
         if: ${{ needs.resolve_mode.outputs.mode == 'brand-api-smoke' }}
