@@ -7,6 +7,11 @@ on:
     - cron: '0 2 * * *'     # 10:00 PM ET — process-deal-flags (reader-submitted flags)
     - cron: '30 6 * * 3'    # 2:30 AM ET Wednesday — brand-api-smoke (weekly health check)
     - cron: '30 9 * * 0'    # 5:30 AM ET Sunday — rss-discovery (weekly)
+    # Weekend daily runs (cron-job.org only fires weekdays). Times are UTC.
+    - cron: '0 14 * * 6'    # Saturday 7:00 AM PT — daily run (catch late-Friday + AM Sat)
+    - cron: '0 21 * * 6'    # Saturday 2:00 PM PT — daily run
+    - cron: '0 14 * * 0'    # Sunday 7:00 AM PT — daily run
+    - cron: '0 22 * * 0'    # Sunday 3:00 PM PT — daily run (pre-Monday refresh)
   workflow_dispatch:
     inputs:
       mode:
@@ -86,6 +91,9 @@ jobs:
               ;;
             "30 9 * * 0")
               echo "mode=rss-discovery" >> "$GITHUB_OUTPUT"
+              ;;
+            "0 14 * * 6"|"0 21 * * 6"|"0 14 * * 0"|"0 22 * * 0")
+              echo "mode=daily" >> "$GITHUB_OUTPUT"
               ;;
             *)
               echo "Unknown schedule: ${{ github.event.schedule }}; defaulting to daily" >&2
