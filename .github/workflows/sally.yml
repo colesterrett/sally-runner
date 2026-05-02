@@ -5,6 +5,7 @@ on:
     - cron: '15 23 * * *'   # 7:15 PM ET — duplicate-review (after both daily runs settle)
     - cron: '30 1 * * *'    # 9:30 PM ET — buyer-branding-backfill --missing
     - cron: '0 2 * * *'     # 10:00 PM ET — process-deal-flags (reader-submitted flags)
+    - cron: '30 2 * * *'    # 10:30 PM ET — resolve-needs-review (clear stuck verification stragglers)
     - cron: '30 6 * * 3'    # 2:30 AM ET Wednesday — brand-api-smoke (weekly health check)
     - cron: '30 9 * * 0'    # 5:30 AM ET Sunday — rss-discovery (weekly)
     # Weekend daily runs (cron-job.org only fires weekdays). Times are UTC.
@@ -28,6 +29,7 @@ on:
           - deal-brief-backfill
           - process-deal-flags
           - sector-tag-backfill
+          - resolve-needs-review
       buyer_branding_limit:
         description: 'Max deals to inspect for buyer branding backfill / duplicate review'
         required: false
@@ -85,6 +87,9 @@ jobs:
               ;;
             "0 2 * * *")
               echo "mode=process-deal-flags" >> "$GITHUB_OUTPUT"
+              ;;
+            "30 2 * * *")
+              echo "mode=resolve-needs-review" >> "$GITHUB_OUTPUT"
               ;;
             "30 6 * * 3")
               echo "mode=brand-api-smoke" >> "$GITHUB_OUTPUT"
@@ -236,6 +241,19 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Resolve stuck needs-review deals
+        if: ${{ needs.resolve_mode.outputs.mode == 'resolve-needs-review' }}
+        run: npm run resolve-needs-review -- --limit=500
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
+          FAST_MODEL: ${{ vars.FAST_MODEL }}
+          REVIEW_MODEL: ${{ vars.REVIEW_MODEL }}
 
       - name: Upload run artifacts
         if: always()
