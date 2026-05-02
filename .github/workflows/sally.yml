@@ -138,6 +138,8 @@ jobs:
         if: ${{ needs.resolve_mode.outputs.mode == 'daily' }}
         run: npm start
         env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
           LOGO_DEV_SECRET_KEY: ${{ secrets.LOGO_DEV_SECRET_KEY }}
@@ -147,6 +149,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
+          FAST_MODEL: ${{ vars.FAST_MODEL }}
           EDITOR_MODEL: ${{ vars.EDITOR_MODEL }}
           MIN_NEW_DEALS_TO_PUBLISH: ${{ vars.MIN_NEW_DEALS_TO_PUBLISH || '3' }}
           MIN_PUBLISHED_DAY_DEALS: ${{ vars.MIN_PUBLISHED_DAY_DEALS || '3' }}
@@ -176,6 +179,8 @@ jobs:
           fi
           npm run backfill-buyer-branding -- $ARGS
         env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
           LOGO_DEV_SECRET_KEY: ${{ secrets.LOGO_DEV_SECRET_KEY }}
@@ -184,15 +189,19 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
+          FAST_MODEL: ${{ vars.FAST_MODEL }}
 
       - name: Review recent duplicates
         if: ${{ needs.resolve_mode.outputs.mode == 'duplicate-review' }}
         run: npm run review-recent-duplicates -- --limit=${{ needs.resolve_mode.outputs.buyer_branding_limit }}
         env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
+          FAST_MODEL: ${{ vars.FAST_MODEL }}
 
       - name: Discover RSS feeds
         if: ${{ needs.resolve_mode.outputs.mode == 'rss-discovery' }}
@@ -206,10 +215,13 @@ jobs:
         if: ${{ needs.resolve_mode.outputs.mode == 'deal-brief-backfill' }}
         run: npm run backfill-deal-briefs -- --days=30
         env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           MAX_DEAL_BRIEFS_PER_RUN: '200'
+          FAST_MODEL: ${{ vars.FAST_MODEL }}
 
       - name: Process reader-submitted deal flags
         if: ${{ needs.resolve_mode.outputs.mode == 'process-deal-flags' }}
