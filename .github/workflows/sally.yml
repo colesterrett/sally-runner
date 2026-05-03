@@ -150,6 +150,9 @@ jobs:
           LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          ENABLE_FIRECRAWL: ${{ vars.ENABLE_FIRECRAWL }}
+          MAX_FIRECRAWL_SOURCES_PER_RUN: ${{ vars.MAX_FIRECRAWL_SOURCES_PER_RUN || '3' }}
           LOGO_DEV_SECRET_KEY: ${{ secrets.LOGO_DEV_SECRET_KEY }}
           BRANDFETCH_CLIENT_ID: ${{ secrets.BRANDFETCH_CLIENT_ID }}
           BRANDFETCH_API_KEY: ${{ secrets.BRANDFETCH_API_KEY }}
