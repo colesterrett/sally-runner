@@ -11,6 +11,7 @@ on:
     - cron: '30 2 * * *'    # 10:30 PM ET — resolve-needs-review (clear stuck verification stragglers)
     - cron: '30 6 * * 3'    # 2:30 AM ET Wednesday — brand-api-smoke (weekly health check)
     - cron: '30 9 * * 0'    # 5:30 AM ET Sunday — rss-discovery (weekly)
+    - cron: '0 11 * * 0'    # 7:00 AM ET Sunday — promote-tiers (weekly)
   workflow_dispatch:
     inputs:
       mode:
@@ -28,6 +29,7 @@ on:
           - process-deal-flags
           - sector-tag-backfill
           - resolve-needs-review
+          - promote-tiers
       buyer_branding_limit:
         description: 'Max deals to inspect for buyer branding backfill / duplicate review'
         required: false
@@ -94,6 +96,9 @@ jobs:
               ;;
             "30 9 * * 0")
               echo "mode=rss-discovery" >> "$GITHUB_OUTPUT"
+              ;;
+            "0 11 * * 0")
+              echo "mode=promote-tiers" >> "$GITHUB_OUTPUT"
               ;;
             *)
               # NEVER fall through to mode=daily for an unmapped schedule.
@@ -236,6 +241,13 @@ jobs:
       - name: Backfill normalized sector tags
         if: ${{ needs.resolve_mode.outputs.mode == 'sector-tag-backfill' }}
         run: npm run backfill-sector-tags -- --limit=${{ needs.resolve_mode.outputs.sector_tag_limit }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Promote source tiers
+        if: ${{ needs.resolve_mode.outputs.mode == 'promote-tiers' }}
+        run: npm run promote-tiers
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
