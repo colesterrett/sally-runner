@@ -1,6 +1,9 @@
 name: Sally Daily Run
 
 on:
+  # Production daily runs are triggered by cron-job.org only (Mon-Fri at
+  # 6 AM, 9 AM, 2 PM PT). DO NOT add a GitHub Actions schedule that fires
+  # mode=daily here — that would create overlapping production runs.
   schedule:
     - cron: '15 23 * * *'   # 7:15 PM ET — duplicate-review (after both daily runs settle)
     - cron: '30 1 * * *'    # 9:30 PM ET — buyer-branding-backfill --missing
@@ -8,11 +11,6 @@ on:
     - cron: '30 2 * * *'    # 10:30 PM ET — resolve-needs-review (clear stuck verification stragglers)
     - cron: '30 6 * * 3'    # 2:30 AM ET Wednesday — brand-api-smoke (weekly health check)
     - cron: '30 9 * * 0'    # 5:30 AM ET Sunday — rss-discovery (weekly)
-    # Weekend daily runs (cron-job.org only fires weekdays). Times are UTC.
-    - cron: '0 14 * * 6'    # Saturday 7:00 AM PT — daily run (catch late-Friday + AM Sat)
-    - cron: '0 21 * * 6'    # Saturday 2:00 PM PT — daily run
-    - cron: '0 14 * * 0'    # Sunday 7:00 AM PT — daily run
-    - cron: '0 22 * * 0'    # Sunday 3:00 PM PT — daily run (pre-Monday refresh)
   workflow_dispatch:
     inputs:
       mode:
@@ -97,12 +95,12 @@ jobs:
             "30 9 * * 0")
               echo "mode=rss-discovery" >> "$GITHUB_OUTPUT"
               ;;
-            "0 14 * * 6"|"0 21 * * 6"|"0 14 * * 0"|"0 22 * * 0")
-              echo "mode=daily" >> "$GITHUB_OUTPUT"
-              ;;
             *)
-              echo "Unknown schedule: ${{ github.event.schedule }}; defaulting to daily" >&2
-              echo "mode=daily" >> "$GITHUB_OUTPUT"
+              # NEVER fall through to mode=daily for an unmapped schedule.
+              # That would silently spawn an unintended production run.
+              # If you add a new cron entry above, add an explicit case here.
+              echo "Unknown cron schedule: '${{ github.event.schedule }}'. Refusing to run." >&2
+              exit 1
               ;;
           esac
 
