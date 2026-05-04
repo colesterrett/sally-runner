@@ -170,6 +170,9 @@ jobs:
           MIN_ANNOUNCED_DATE: ${{ vars.MIN_ANNOUNCED_DATE }}
           MONITORED_MAX_LLM_ARTICLES: ${{ vars.MONITORED_MAX_LLM_ARTICLES || '100' }}
           MONITORED_LLM_CONCURRENCY: ${{ vars.MONITORED_LLM_CONCURRENCY || '2' }}
+          DISPLAY_COPY_CONCURRENCY: ${{ vars.DISPLAY_COPY_CONCURRENCY || '1' }}
+          DEAL_BRIEF_CONCURRENCY: ${{ vars.DEAL_BRIEF_CONCURRENCY || '3' }}
+          REVIEW_MODEL: ${{ vars.REVIEW_MODEL }}
 
       - name: Smoke test brand APIs
         if: ${{ needs.resolve_mode.outputs.mode == 'brand-api-smoke' }}
